@@ -50,9 +50,167 @@ r = requests.get('https://api.github.com/repos/kestra-io/kestra')
 gh_stars = r.json()['stargazers_count']
 Kestra.outputs({'gh_stars': gh_stars})
 
-# third kestra example 
+# third kestra example: cloning a git repository using inputs( before executions it will ask for the repository url, and there is a default one)
+                        and then executing the python file in the repo named in this case stars.py
+
+id: api_example
+namespace: company.team
+
+inputs:
+  - id: github_url
+    type: STRING
+    defaults: https://github.com/ChiarelliS/De_zoomcamp_2025
+
+tasks:
+  - id: wdir
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone
+        type: io.kestra.plugin.git.Clone
+        url: "{{ inputs.github_url }}"
+      - id: python_script
+        type: io.kestra.plugin.scripts.python.Commands
+        beforeCommands:
+          - pip install requests kestra
+        commands:
+          - python week2/stars.py
+      - id: python_output
+        type: io.kestra.plugin.core.log.Log
+        message: "{{ outputs.python_script.vars.gh_stars}}"
+
+# 4th example kestra: getting started, using description, in the type section of task, if you start typing the type you want (eg log) the autocomplete will tell you the type options
+
+id: getting_started
+namespace: company.team
+
+description: |
+   # Getting Started
+   Let's 'write' sine **markdown** - [first flow]
+
+labels:
+  owner: sara.ch
+  project: this-not-that
+   
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Hello World! 🚀
+    description: |
+      ##  About this taks
+      This task will print "Hello World!" to the logs.
+
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: Hello World
+
+# 5th kestra example: using input to change values at exectuion, without hardcoding
+
+id: inputs_demo
+namespace: company.team
+
+inputs:
+  - id: api_url
+    type: STRING
+    defaults: https://dummyjson.com/products
+tasks:
+  - id: api
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.api_url }}"
 
 
+# 6h kestra example: using outputs from previous tasks in other tasks:
+
+id: output_demo
+namespace: company.team
+
+inputs:
+  - id: api_url
+    type: STRING
+    defaults: https://dummyjson.com/products
+tasks:
+  - id: api
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ inputs.api_url }}"
+  
+  - id: log
+    type: io.kestra.plugin.core.log.Log
+    message: "{{ outputs.api.body }}"
+  
+  - id: python
+    type: io.kestra.plugin.scripts.python.Script
+    containerImage: python:slim
+    beforeCommands: 
+      - pip install polars
+    warningOnStdErr: false
+    outputFiles:
+      - "products.csv"
+    
+    script: |
+    
+      import polars as pl
 
 
+      data = {{outputs.api.body | jq('.products') | first}}
+      df = pl.from_dicts(data)
+      df.glimpse()
+      df.select(["brand", "price"]).write_csv("products.csv")
+
+# 7th kestra example: setting up trigger
+
+id: trigger_to_automate_flow_execution
+namespace: company.team
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Hello World! 🚀
+
+triggers:
+  - id: schedule_trigger
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: 0 10 * * * 
+  
+  - id: flow_trigger
+    type: io.kestra.plugin.core.trigger.Flow
+    conditions: 
+      - type: io.kestra.plugin.core.condition.ExecutionFlow
+        namespace: company.team
+        flowId: first_flow
+
+# 8th kestra example: flowable tasks (concurrencyLimit sets how many tasks you want to execute in parallel, if u dont set concurrency limit, it will execute each task separatedly)
+
+id: getting_started_flow
+namespace: company.team
+
+tasks:
+  - id: for_each
+    type: io.kestra.plugin.core.flow.ForEach
+    concurrencyLimit: 0
+    values: ["pynchon","dostoyevsky","hedayat"]
+    tasks:
+      - id: api
+        type: io.kestra.plugin.core.http.Request
+        uri: "https://openlibrary.org/search.json?author={{ taskrun.value }}&sort=new"
+        
+
+# 9th kestra example: error handling in the workflow
+
+id: unreliable_flow_tutorial_handling_errors
+namespace: company.team
+
+tasks:
+  - id: fail
+    type: io.kestra.plugin.core.execution.Fail
+
+errors:
+  - id: alert_on_failure
+    type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
+    url: "{{ kv ('SLACK_WEBHOOK') }}"
+    payload: |
+      {
+        "text": "Failure alert for flow {{ flow.namespace }}.{{flow.id}} with ID {{ execution.id }}" 
+      }
+
+  https://kestra.io/docs/tutorial/errors (here also code to use triggers instead of adding error handling to each task, as well as code to add retries in case of error handling, useful when u have tasks that are prone to failing, but after some attempts work)
 
